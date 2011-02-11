@@ -10,6 +10,7 @@ endif(COMMAND CMAKE_POLICY)
 include(${CMAKE_CURRENT_SOURCE_DIR}/CMake/PreventInSourceBuilds.cmake)
 
 project(ITK)
+set(CMAKE_MODULE_PATH ${ITK_SOURCE_DIR}/CMake)
 include_regular_expression("^([Nn]rrd|itk|vtk|vnl|vcl|vxl|v3p|f2c|netlib|ce|itpack|DICOM|meta|png|dbh|tif|jpeg|zlib|gdcm).*$")
 source_group("XML Files" REGULAR_EXPRESSION "[.]xml$")
 
@@ -66,10 +67,16 @@ include(${CMAKE_ROOT}/Modules/CMakeBackwardCompatibilityC.cmake)
 include(${CMAKE_ROOT}/Modules/CMakeBackwardCompatibilityCXX.cmake)
 
 #-----------------------------------------------------------------------------
-# Load macro to manage data download from MIDAS
-include(${ITK_SOURCE_DIR}/CMake/MIDAS.cmake)
-set(MIDAS_REST_URL "http://midas.kitware.com/api/rest")
-set(MIDAS_KEY_DIR "${PROJECT_SOURCE_DIR}/Testing/MIDAS_Keys")
+# Load macros to manage data download
+include(ExternalData)
+list(APPEND ExternalData_URL_TEMPLATES
+  "http://midas.kitware.com/api/rest/midas.bitstream.by.hash?hash=%(hash)&algorithm=%(algo)"
+  )
+
+# Helper macro to add ITK tests with data in the ITKData group.
+macro(itk_add_test)
+  ExternalData_add_test(ITKData ${ARGN})
+endmacro()
 
 #-----------------------------------------------------------------------------
 # Configure Dart testing support.  This should be done before any
@@ -111,8 +118,6 @@ set(ITK_LIBRARY_PATH "${LIBRARY_OUTPUT_PATH}")
 set(ITK_EXECUTABLE_PATH "${EXECUTABLE_OUTPUT_PATH}")
 set(CXX_TEST_PATH ${EXECUTABLE_OUTPUT_PATH})
 
-set(CMAKE_MODULE_PATH ${ITK_SOURCE_DIR}/CMake)
-
 include(itkCheckSourceTree)
 
 # Deal with FFT v3 Options
@@ -138,6 +143,11 @@ if( USE_FFTWD OR USE_FFTWF )
   include(itkExternal_FFTW)
 endif( USE_FFTWD OR USE_FFTWF )
 
+
+#-----------------------------------------------------------------------------
+# Options for enabling specific file formats
+include(${ITK_SOURCE_DIR}/CMake/EnablePreregisteredImageIOFactories.cmake)
+
 # Deal with MINC2 options
 mark_as_advanced(ITK_USE_MINC2)
 option(ITK_USE_MINC2 "Use MINC2 File Format" OFF)
@@ -152,6 +162,10 @@ endif( ITK_USE_MINC2 )
 #-----------------------------------------------------------------------------
 option(ITK_USE_MODULAR_BUILD "Whether ITK is built from the modularized tree. This should be ON when building the modularized ITK." OFF)
 mark_as_advanced(ITK_USE_MODULAR_BUILD)
+
+#-----------------------------------------------------------------------------
+option(ITK_USE_GPU "GPU acceleration via OpenCL" OFF)
+mark_as_advanced(ITK_USE_GPU)
 
 #-----------------------------------------------------------------------------
 # ITK build configuration options.
@@ -333,10 +347,7 @@ include(CPack)
 
 #-----------------------------------------------------------------------------
 # Perform a setup of ITK Wrapping. This will provide CMake options for
-# individual wrapping as well as determine if CableSwig is required. If it is,
-# ITK_NEED_CableSwig will be set. This file also tries to locate CableSwig by
-# searching first in the source tree of ITK, and if that fails, it searches
-# for a binary built of CableSwig.
+# individual wrapping.
 #
 include(${ITK_SOURCE_DIR}/Wrapping/itkWrapSetup.cmake)
 
@@ -404,6 +415,9 @@ if(BUILD_DOXYGEN)
   find_package(Doxygen)
 endif(BUILD_DOXYGEN)
 
+#-----------------------------------------------------------------------------
+# Check if this platform support the sse2 rounding functions for 32 and 64 bits
+include(${CMAKE_CURRENT_SOURCE_DIR}/CMake/CheckSupportForSSERounding.cmake)
 
 #-----------------------------------------------------------------------------
 # ITK requires special compiler flags on some platforms.
@@ -436,10 +450,6 @@ if(CMAKE_COMPILER_IS_GNUCXX)
 
   endif(APPLE)
 
-  # gcc must have -msse2 option to enable sse2 support
-  if(VNL_CONFIG_ENABLE_SSE2 OR VNL_CONFIG_ENABLE_SSE2_ROUNDING)
-    set(ITK_REQUIRED_CXX_FLAGS "${ITK_REQUIRED_CXX_FLAGS} -msse2")
-  endif(VNL_CONFIG_ENABLE_SSE2 OR VNL_CONFIG_ENABLE_SSE2_ROUNDING)
 endif(CMAKE_COMPILER_IS_GNUCXX)
 
 if(UNIX)
@@ -633,13 +643,20 @@ endif(HAVE_UNISTD_H)
 
 #-----------------------------------------------------------------------------
 # Configure the default ITK_DATA_ROOT for the location of ITK Data.
-find_path(ITK_DATA_ROOT ITKData.readme ${ITK_SOURCE_DIR}/Testing/Data $ENV{ITK_DATA_ROOT})
-if(NOT ITK_DATA_ROOT)
-  if(BUILD_TESTING)
-    message(WARNING "ITK_DATA_ROOT was not found.  ctest will not run properly.")
-  endif()
+unset(ITK_DATA_ROOT CACHE) # No longer a cache entry.
+if(EXISTS ${ITK_SOURCE_DIR}/Testing/Data/ITKData.readme)
+  set(ITK_DATA_ROOT ${ITK_SOURCE_DIR}/Testing/Data)
+else()
+  set(ITK_DATA_ROOT "ITK_DATA_ROOT-NOTFOUND")
+  foreach(opt BUILD_TESTING BUILD_EXAMPLES)
+    if(${opt})
+      message(FATAL_ERROR
+        "${opt} is ON but the Testing/Data submodule is not available.  "
+        "Run\n  git submodule update --init\n"
+        "from the top of the source tree to get it!")
+    endif()
+  endforeach()
 endif()
-mark_as_advanced(ITK_DATA_ROOT)
 
 #-----------------------------------------------------------------------------
 # Enable the download and use of BrainWeb datasets.
@@ -812,3 +829,7 @@ endif(BUILD_TESTING)
 if(BUILD_EXAMPLES)
   add_subdirectory(Examples)
 endif(BUILD_EXAMPLES)
+
+# Create target to download data from the ITKData group.  This must come after
+# all tests have been added that reference the group, so we put it last.
+ExternalData_Add_Target(ITKData)

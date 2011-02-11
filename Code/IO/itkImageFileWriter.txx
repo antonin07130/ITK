@@ -128,6 +128,7 @@ ImageFileWriter< TInputImage >
     itkExceptionMacro(<< "No filename was specified");
     }
 
+#if !defined(SPECIFIC_IMAGEIO_MODULE_TEST)
   if ( m_ImageIO.IsNull() ) //try creating via factory
     {
     itkDebugMacro(<< "Attempting factory creation of ImageIO for file: "
@@ -149,6 +150,7 @@ ImageFileWriter< TInputImage >
       m_FactorySpecifiedImageIO = true;
       }
     }
+#endif
 
   if ( m_ImageIO.IsNull() )
     {
@@ -178,8 +180,27 @@ ImageFileWriter< TInputImage >
   // of the ProcessObject.
   InputImageType *nonConstInput = const_cast< InputImageType * >( input );
 
-  // Update the meta data
-  nonConstInput->UpdateOutputInformation();
+  // Update the meta data if needed
+  if ( !m_UserSpecifiedIORegion )
+    {
+    nonConstInput->UpdateOutputInformation();
+    }
+  else
+    {
+    // The user specified an io paste region.
+
+    // If the input image is does not have an source filter, then we
+    // do not want to update the output information, because it will
+    // change the largest possible region to the buffered region. When
+    // we are pasting the largest possible regions of the input must
+    // match the file.
+    if ( nonConstInput->GetSource() )
+      {
+      nonConstInput->UpdateOutputInformation();
+      }
+
+    }
+
 
   // Setup the ImageIO
   //

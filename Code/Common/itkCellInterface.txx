@@ -46,6 +46,36 @@ CellInterface< TPixelType, TCellTraits >
   return this->PointIdsBegin();
 }
 
+template< typename TPixelType, typename TCellTraits >
+typename CellInterface< TPixelType, TCellTraits >::PointIdentifierContainerType
+CellInterface< TPixelType, TCellTraits >
+::GetPointIdsContainer() const
+{
+  PointIdentifierContainerType res;
+  res.SetSize( this->GetNumberOfPoints() );
+  int i = 0;
+  PointIdConstIterator it = this->PointIdsBegin();
+  PointIdConstIterator end = this->PointIdsEnd();
+  while( it != end )
+    {
+    res[i] = *it;
+    ++i;
+    ++it;
+    }
+  return res;
+}
+
+template< typename TPixelType, typename TCellTraits >
+void
+CellInterface< TPixelType, TCellTraits >
+::SetPointIdsContainer( const PointIdentifierContainerType & container )
+{
+  for( unsigned int i=0; i<container.Size(); i++ )
+    {
+    this->SetPointId( i, container[i] );
+    }
+}
+
 /**
  * Return true if the UsingCellsContainer m_UsingCells is nonempty,
  * false otherwise.  The container m_UsingCells is meant to contain a

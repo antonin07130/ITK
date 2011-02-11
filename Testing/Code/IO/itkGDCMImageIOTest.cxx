@@ -28,7 +28,11 @@
 #include <list>
 #include <fstream>
 
-int main(int ac, char* av[])
+#if defined(ITK_USE_MODULAR_BUILD)
+  #define SPECIFIC_IMAGEIO_MODULE_TEST
+#endif
+
+int itkGDCMImageIOTest(int ac, char* av[])
 {
 
   if(ac < 5)
